@@ -67,7 +67,7 @@ class RasterView(View):
             nr_of_breaks = 7
 
             # Compute bin width for a linear scaling
-            diff = (meta.max - meta.min) / 7
+            diff = (meta.max - meta.min) / nr_of_breaks
 
             # Create colormap with seven breaks
             colormap = {}
@@ -463,3 +463,56 @@ class ExportView(AlgebraView):
         )
         response['Content-Disposition'] = 'attachment; filename="{0}"'.format(filename_base + '.zip')
         return response
+
+
+class RGBView(RasterView):
+
+    def get(self, request, r, g, b, z, x, y, **kwargs):
+
+        z = int(z)
+        x = int(x)
+        y = int(y)
+        red = int(r)
+        green = int(g)
+        blue = int(b)
+
+        from raster.models import RasterLayerBandMetadata
+
+        #red_max = RasterLayerBandMetadata.objects.get(rasterlayer=red).max
+        #green_max = RasterLayerBandMetadata.objects.get(rasterlayer=green).max
+        #blue_max = RasterLayerBandMetadata.objects.get(rasterlayer=blue).max
+
+        red = get_raster_tile(red, z, x, y)
+        green = get_raster_tile(green, z, x, y)
+        blue = get_raster_tile(blue, z, x, y)
+
+        red = red.bands[0].data()
+        green = green.bands[0].data()
+        blue = blue.bands[0].data()
+
+        SCALE = 3e3
+
+        red[red > SCALE] = SCALE
+        green[green > SCALE] = SCALE
+        blue[blue > SCALE] = SCALE
+
+        #red = red * 255.0 / red_max
+        #green = green * 255.0 / green_max
+        #blue = blue * 255.0 / blue_max
+
+        red = red * 255.0 / SCALE
+        green = green * 255.0 / SCALE
+        blue = blue * 255.0 / SCALE
+
+        # Create zeros array
+        alpha = 255 * (red > 0) * (blue > 0) * (green > 0)
+
+        rgba = numpy.array((red.ravel(), green.ravel(), blue.ravel(), alpha.ravel())).T
+        rgba = rgba.reshape(WEB_MERCATOR_TILESIZE, WEB_MERCATOR_TILESIZE, 4).astype('uint8')
+
+        # Create image from array
+        img = Image.fromarray(rgba)
+        stats = {}
+
+        # Return rendered image
+        return self.write_img_to_response(img, stats)
